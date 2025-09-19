@@ -11,7 +11,7 @@ from io import BytesIO
 
 # ================== CONFIG ==================
 TICKER_LIST_URL = "https://clientn.com/stocks/Shariaa.html"
-LOOKBACK_DAYS = 90
+DEFAULT_LOOKBACK_DAYS = 700  # <-- default for the UI (user can change)
 INTERVAL = "1d"
 YF_SUFFIX = ""  # Yahoo suffix for EGX tickers; set to "" if your list already includes it
 COLS = ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]
@@ -73,7 +73,7 @@ def normalize_ohlcv(df_t: pd.DataFrame) -> pd.DataFrame:
         df_t = df_t.sort_values("Date").reset_index(drop=True)
     return df_t
 
-def download_and_write_excel(url: str) -> Tuple[BytesIO, pd.DataFrame, List[str], str]:
+def download_and_write_excel(url: str, lookback_days: int) -> Tuple[BytesIO, pd.DataFrame, List[str], str]:
     original_tickers = get_egx_tickers(url)
     pairs = [(orig, to_yf_symbol(orig)) for orig in original_tickers]
     yf_syms = [y for _, y in pairs]
@@ -82,14 +82,14 @@ def download_and_write_excel(url: str) -> Tuple[BytesIO, pd.DataFrame, List[str]
 
     data = yf.download(
         yf_syms,
-        period=f"{LOOKBACK_DAYS}d",
+        period=f"{lookback_days}d",
         interval=INTERVAL,
         auto_adjust=False,
         threads=True,
         progress=False,
     )
 
-    output_xlsx = f"egx_ohlcv_{LOOKBACK_DAYS}d_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    output_xlsx = f"egx_ohlcv_{lookback_days}d_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
         summary_rows = []
@@ -140,12 +140,22 @@ def download_and_write_excel(url: str) -> Tuple[BytesIO, pd.DataFrame, List[str]
 # ================== STREAMLIT UI ==================
 st.set_page_config(page_title="EGX OHLCV Excel Downloader", layout="wide")
 st.title("EGX OHLCV Excel Downloader")
-st.write("Download last 90 days of daily OHLCV for all stocks in the list, one Excel file with a sheet per stock.")
+st.write("Download daily OHLCV for all stocks in the list, one Excel file with a sheet per stock.")
+
+# New control: user-selectable lookback days (default 700)
+lookback_days = st.number_input(
+    "Lookback window (days)",
+    min_value=1,
+    max_value=5000,
+    value=DEFAULT_LOOKBACK_DAYS,
+    step=1,
+    help="Number of past days to fetch (default 700)."
+)
 
 if st.button("Download and Generate Excel"):
     with st.spinner("Processing..."):
         try:
-            excel_buffer, summary_df, skipped, output_xlsx = download_and_write_excel(TICKER_LIST_URL)
+            excel_buffer, summary_df, skipped, output_xlsx = download_and_write_excel(TICKER_LIST_URL, int(lookback_days))
             st.success(f"Excel generated: {output_xlsx}")
             st.download_button(
                 label="Download Excel File",
@@ -160,4 +170,4 @@ if st.button("Download and Generate Excel"):
         except Exception as e:
             st.error(f"Error: {e}")
 else:
-    st.info("Press the button above to start.")
+    st.info("Set the lookback window above and press the button to start.")
